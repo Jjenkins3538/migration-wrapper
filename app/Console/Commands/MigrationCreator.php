@@ -61,24 +61,19 @@ class MigrationCreator extends Command
             }
         );
 
-        $tableColumns = [];
-
         $columns = text(
             label: 'What are the columns?',
-            placeholder: 'name:string, email:string:unique, password:string:nullable',
+            placeholder: 'name, email, password',
             validate: fn (string $value) => match (true) {
-                Str::contains($value, ' ') => 'Column names cannot contain spaces',
-                !Str::contains($value, ':') => 'Column names must be followed by a colon and a rule',
-                !Str::contains($value, ',') => 'Column names must be separated by a comma',
+                !Str::contains($value, ', ') => 'Column names must be comma separated',
                 default => null
             }
         );
 
-
-        $this->ensureMigrationDoesntAlreadyExist($tableName, database_path('migrations'));
+        $cleanedColumns = $this->cleanColumns($columns);
 
         $filePath = database_path('migrations/' . date('Y_m_d_His') . '_' . $tableName . '.php');
-        $this->populateStubFile($tableName, $filePath);
+        $this->populateStubFile($tableName, $filePath, $cleanedColumns);
     }
 
     /**
@@ -106,13 +101,32 @@ class MigrationCreator extends Command
         return $this->files->get(storage_path('app/public/stubs/migration.create.stub'));
     }
 
-    private function populateStubFile(string $tableName, string $filePath): void
+    private function populateStubFile(string $tableName, string $filePath, string $columns): void
     {
         $stub = $this->getStub();
 
         $tableVar = Str::between($tableName, 'create_', '_table');
         $stub = str_replace('{{ table }}', $tableVar, $stub);
+        $stub = str_replace('{{ columns }}', $columns, $stub);
 
         $this->files->put($filePath, $stub);
+    }
+
+    private function cleanColumns(string $columnString): string
+    {
+        $columns = explode(', ', $columnString);
+        $cleanedColumns = [];
+        $baseString = "\$table->string('{column}');";
+
+        foreach ($columns as $column) {
+            $columnName = str_replace('{column}', Str::snake($column), $baseString);
+
+            $cleanedColumns[] = $columnName;
+        }
+
+        $cleanedColumns = implode(PHP_EOL . '        ', $cleanedColumns);
+        logger($cleanedColumns);
+
+        return $cleanedColumns;
     }
 }
