@@ -39,7 +39,7 @@ class MigrationCreator extends Command
      */
     public function handle()
     {
-        // NOTE: MOVED EVERYTHING FROM STUB TO SERVICE
+        // NOTE: MOVED EVERYTHING FROM STUB TO SERVICE -- need to move everything back to stub but change the method of loading the file content
 
         // TODO:
         // first check which DB driver is being used (mysql, pgsql, sqlite, sqlsrv) it effects which rules are allowed
@@ -47,18 +47,15 @@ class MigrationCreator extends Command
         // prompt user for migration rules
         // add update class to GenerateMigrationClassService
 
-
-
         $this->files = new Filesystem();
-        $migrationRulesService = new MigrationRulesService();
-        $migrationRules = $migrationRulesService->getMigrationRules();
+        $migrationRules = new MigrationRulesService();
 
         $tableName = text(
-            label: 'What is the table name?',
+            label: 'Enter Table Name',
             placeholder: 'Users',
             validate: fn (string $value) => match (true) {
                 Str::contains($value, ' ') => 'Table names cannot contain spaces',
-                !Str::contains($value, '_table') => 'Table names must end with _table',
+                !Str::endsWith($value, '_table') => 'Table names must end with _table',
                 !Str::startsWith($value, ['create_', 'update_']) => 'Table names must start with create_ or update_',
                 $this->ensureMigrationDoesntAlreadyExist($value, database_path('migrations')) => 'A migration for ' . $value . ' already exists',
                 default => null
@@ -67,9 +64,9 @@ class MigrationCreator extends Command
 
         $columns = text(
             label: 'What are the columns?',
-            placeholder: 'name, email, password',
+            placeholder: 'name:string, email:string, password:longText',
             validate: fn (string $value) => match (true) {
-                !Str::contains($value, ', ') => 'Column names must be comma separated',
+                !Str::contains($value, ':') => 'Column names and type must be comma separated',
                 default => null
             }
         );
@@ -85,9 +82,9 @@ class MigrationCreator extends Command
         );
 
         if ($confirm) {
+            // probably should not use shell exec
             shell_exec('php artisan migrate');
         }
-
     }
 
     /**
@@ -101,6 +98,7 @@ class MigrationCreator extends Command
      */
     protected function ensureMigrationDoesntAlreadyExist($name, $migrationPath)
     {
+        // $start_time = microtime(true);
         if (!empty($migrationPath)) {
             $migrationFiles = $this->files->glob($migrationPath . '/*.php');
 
@@ -108,15 +106,19 @@ class MigrationCreator extends Command
                 throw new InvalidArgumentException("A migration for {$name} already exists.");
             }
         }
+
+        // $end_time = microtime(true);
+        // logger($end_time - $start_time);
     }
 
     private function populateStubFile(string $tableName, string $filePath, string $columns): void
     {
-        $migrationClassString = new GenerateMigrationClassService();
-        $migrationClassString = $migrationClassString->__invoke();
+        // Get the migration class string
+        $method = Str::startsWith($tableName, 'create_') ? 'create' : 'update';
+        $migrationClassString = file_get_contents(storage_path("app/public/stubs/{$method}.migration.stub"));
 
-        // Create the migration file
-        $tableVar = Str::between($tableName, 'create_', '_table');
+        // Create the migration file and fill it with data from prompts
+        $tableVar = Str::between($tableName, $method . '_', '_table');
         $migrationClassString = str_replace('{{ table }}', $tableVar, $migrationClassString);
         $migrationClassString = str_replace('{{ columns }}', $columns, $migrationClassString);
         $this->files->put($filePath, $migrationClassString);
@@ -126,12 +128,17 @@ class MigrationCreator extends Command
     {
         $columns = explode(', ', $columnString);
         $cleanedColumns = '';
-        $baseString = "\$table->string('{column}');";
+        $baseString = "\$table->{column_type}('{column}');";
 
         foreach ($columns as $column) {
-            $columnName = str_replace('{column}', Str::snake($column), $baseString);
+            [$column, $typeString] = explode(':', $column);
+            $columnTypeString = str_replace('{column_type}', $typeString, $baseString);
+            $columnName = str_replace('{column}', Str::snake($column), $columnTypeString);
 
-            $cleanedColumns .= $columnName . PHP_EOL . '                    ';
+            $cleanedColumns .= $columnName;
+            if ($column !== end($columns)) {
+                $cleanedColumns .= PHP_EOL . '            ';
+            }
         }
 
         return $cleanedColumns;

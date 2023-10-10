@@ -4,7 +4,18 @@ namespace App\Services;
 
 class GenerateMigrationClassService
 {
-    public function __invoke(): string
+    /**
+     * Get the file boilerplate for the generator.
+     * @param string $method
+     * @return string
+     */
+    public function __invoke($method = 'create'): string
+    {
+        if ($method == 'create') return $this->creationBoilerplate();
+        else return $this->updateBoilerplate();
+    }
+
+    private function creationBoilerplate():string
     {
         return '<?php
 
@@ -36,4 +47,10 @@ class GenerateMigrationClassService
         };
         ';
     }
+
+    private function updateBoilerplate():string
+    {
+        return '';
+    }
+
 }
