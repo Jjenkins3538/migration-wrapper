@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use Illuminate\Console\Command;
 use function Laravel\Prompts\text;
 use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\multiselect;
 use Illuminate\Filesystem\Filesystem;
 use App\Services\MigrationRulesService;
 
@@ -33,6 +34,12 @@ class MigrationCreator extends Command
      * @var Filesystem
      */
     protected $files;
+
+    /**
+     * The base string for migration column
+     * @var string
+     */
+    protected $baseString = "\$table->?('?');";
 
     /**
      * Execute the console command.
@@ -98,7 +105,6 @@ class MigrationCreator extends Command
      */
     protected function ensureMigrationDoesntAlreadyExist($name, $migrationPath)
     {
-        // $start_time = microtime(true);
         if (!empty($migrationPath)) {
             $migrationFiles = $this->files->glob($migrationPath . '/*.php');
 
@@ -106,15 +112,12 @@ class MigrationCreator extends Command
                 throw new InvalidArgumentException("A migration for {$name} already exists.");
             }
         }
-
-        // $end_time = microtime(true);
-        // logger($end_time - $start_time);
     }
 
     private function populateStubFile(string $tableName, string $filePath, string $columns): void
     {
         // Get the migration class string
-        $method = Str::startsWith($tableName, 'create_') ? 'create' : 'update';
+        $method = Str::before($tableName, '_');
         $migrationClassString = file_get_contents(storage_path("app/public/stubs/{$method}.migration.stub"));
 
         // Create the migration file and fill it with data from prompts
@@ -128,15 +131,15 @@ class MigrationCreator extends Command
     {
         $columns = explode(', ', $columnString);
         $cleanedColumns = '';
-        $baseString = "\$table->{column_type}('{column}');";
 
-        foreach ($columns as $column) {
+        foreach ($columns as $key => $column) {
             [$column, $typeString] = explode(':', $column);
-            $columnTypeString = str_replace('{column_type}', $typeString, $baseString);
-            $columnName = str_replace('{column}', Str::snake($column), $columnTypeString);
+
+            $columnName = Str::replaceArray('?', [$typeString, Str::snake($column)], $this->baseString);
 
             $cleanedColumns .= $columnName;
-            if ($column !== end($columns)) {
+
+            if ($key !== array_key_last($columns)) {
                 $cleanedColumns .= PHP_EOL . '            ';
             }
         }
